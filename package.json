@@ -1,0 +1,38 @@
+{
+  "name": "maindala",
+  "version": "0.1.11",
+  "description": "Install mAIndala Skills and Agents into your AI coding tools",
+  "license": "MIT",
+  "bin": {
+    "maindala": "bin/maindala"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@peculiar/asn1-schema": "^2.8.0",
+    "@peculiar/asn1-tsp": "^2.8.0",
+    "@peculiar/asn1-x509": "^2.8.0",
+    "asn1js": "^3.0.10",
+    "commander": "^12.1.0",
+    "pkijs": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

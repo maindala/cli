@@ -1,0 +1,1 @@
+This is a sample evidence pack section, used only as a fixture for offline RFC 3161 verification testing.
