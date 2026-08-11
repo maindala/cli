@@ -1,5 +1,5 @@
-// `maindala tail` — Free Telemetry Wedge P1. Polls catalog-service's existing
-// gateway-activity + a2a-activity endpoints (org-admin, mk_/session auth) with the
+// `maindala tail` — polls the catalog API's existing gateway-activity +
+// a2a-activity endpoints (org-admin, mk_/session auth) with the
 // opaque `since` cursor those routes now accept, and renders a live, colorized,
 // merged stream of an org's governed tool calls + A2A delegations. Metadata only —
 // these endpoints never carry prompts/args/results, only tool/target/decision/latency.
@@ -237,7 +237,7 @@ export async function tailActivity(orgSlug: string, apiKey: string, options: Tai
   }
 }
 
-// ─── Free Telemetry Wedge P2 — zero-setup stream (no org, mt_ token) ─────────
+// ─── Zero-setup stream (no org, mt_ token) ───────────────────────────────────
 
 const GATEWAY_URL = 'https://mcp.maindala.com';
 

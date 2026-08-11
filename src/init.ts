@@ -1,5 +1,5 @@
-// `maindala init` — Free Telemetry Wedge P3. Scaffolds the @maindala/telemetry
-// wiring into the current project so "install → tail" is a single guided flow,
+// `maindala init` — scaffolds the @maindala/telemetry wiring into the current
+// project so "install → tail" is a single guided flow,
 // not a blank-page README read. Deliberately light — this writes ONE example
 // file, never touches existing project files, and is a no-op if that file
 // already exists (idempotent, matches this CLI's existing upsert philosophy).

@@ -42,7 +42,7 @@ export type Payload =
 // Max agents in a team (entry + 4 workers) — matches the platform's team cap.
 export const MAX_TEAM_AGENTS = 5;
 
-// Assemble a TEAM_CONFIG identical to deployment-service's: entry first, then
+// Assemble a TEAM_CONFIG identical to the platform's own deploy pipeline: entry first, then
 // workers, each carrying its parsed bundle. `bundles` are raw JSON strings.
 export function assembleTeamConfig(
   entry: { slug: string; name: string; bundle: string },

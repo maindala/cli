@@ -295,7 +295,7 @@ program
 program
   .command('init')
   .description(
-    'Scaffold @maindala/telemetry into the current project (Free Telemetry Wedge P3).\n' +
+    'Scaffold @maindala/telemetry into the current project.\n' +
     '  Writes a small example file showing how to push metadata-only tool-call\n' +
     '  events. Requires a token — run `maindala tail --signup <email>` first.'
   )
