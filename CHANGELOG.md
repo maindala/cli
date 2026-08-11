@@ -6,7 +6,16 @@ against what is actually live on npm (`npm view maindala versions`/`npm view mai
 checked 2026-08-11), not just what shipped in source. This is the first release with a
 CHANGELOG.md — everything through 0.1.11 is a historical backfill.
 
-## [0.1.12] - Unreleased
+## [0.1.12] - 2026-08-11
+
+Date corrected after the fact (confirmed via `npm view maindala time --json`, not
+guessed) — this repo had the identical "published as Unreleased" defect found and fixed
+in `@maindala/agent-guard`'s `1.0.1` (this heading was still "Unreleased" while `0.1.12`
+was already live on npm). **The published `0.1.12` tarball on npm still contains this
+heading as "Unreleased"** — `CHANGELOG.md` ships inside the tarball built at publish
+time, and npm versions are immutable, so that copy can never be corrected. Only this repo
+copy, and only going forward (via the new `scripts/check-changelog-date.mjs` release
+gate — see RELEASING.md), is fixed.
 
 ### Fixed
 - `--help` output for `maindala init` named an internal initiative codename and phase
