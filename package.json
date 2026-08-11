@@ -3,6 +3,14 @@
   "version": "0.1.12",
   "description": "Install mAIndala Skills and Agents into your AI coding tools",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maindala/cli.git"
+  },
+  "homepage": "https://github.com/maindala/cli#readme",
+  "bugs": {
+    "url": "https://github.com/maindala/cli/issues"
+  },
   "bin": {
     "maindala": "bin/maindala"
   },
