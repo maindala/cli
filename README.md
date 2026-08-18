@@ -57,6 +57,33 @@ npx maindala install agent/stock-analyst-pro --format cursor
 npx maindala install full-equity-research-report --api-format openai
 ```
 
+## Discover agents (`scan`)
+
+```bash
+# Local report — no account, no API key, works offline
+npx maindala scan .
+
+# Machine-readable report, signable before anything touches mAIndala
+npx maindala scan . --format sarif --output scan.sarif
+# writes scan.sarif + a sidecar manifest.json (SHA-256 digest) — sign the
+# digest with your own infrastructure (cosign, GPG, an in-house TSA)
+
+# Optionally anchor the digest with a free public RFC 3161 timestamp
+npx maindala scan . --format sarif --output scan.sarif --timestamp
+
+# Push findings into a governed org registry (requires `maindala login <mk_...>`)
+npx maindala scan . --register --org my-org
+```
+
+Detects, at three confidence tiers, agent/LLM framework usage in the current
+directory: dependency manifests (`package.json`, `requirements.txt`,
+`pyproject.toml`, `go.mod`), MCP client config / crew-agent definition files
+(`.mcp.json`, `claude_desktop_config.json`, `crew.yaml`, `agents.yaml`), and
+(lowest confidence, never auto-registered) source-code patterns. MCP servers
+found in a config file are matched against the public mAIndala catalog for
+context (trust status, check count) — see [DATA.md](./DATA.md) for exactly
+what is sent over the network in each mode, and to whom.
+
 ## Releasing
 
 See [RELEASING.md](./RELEASING.md) — publishing runs through a GitHub Release +
