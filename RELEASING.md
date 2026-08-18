@@ -10,28 +10,32 @@ replaces the old flow of an owner running `npm publish` locally behind an intera
 
 1. Bump `version` in `package.json` and add a dated entry to `CHANGELOG.md` **in the same
    release-prep commit** — `## [X.Y.Z] - YYYY-MM-DD` with today's real date, not
-   `Unreleased`, not `TBD`, not left blank. This can go directly to `main` as usual —
-   branch protection on this repo only requires a reviewed PR for changes under `.github/`
-   (see below), not for every change.
+   `Unreleased`, not `TBD`, not left blank. **This needs a PR, not a direct push** — `main`'s
+   branch protection has `enforce_admins: true` and requires a pull request for every
+   change, with no path-based exception and no admin bypass (confirmed directly: a plain
+   `src/` change was rejected on direct push even from an account with `admin` permission
+   on this repo). Squash merging is disabled repo-wide; use a merge-commit or rebase-merge.
 
-   **The release will fail if you skip this.** `release.yml`'s `verify` job runs
-   `scripts/check-changelog-date.mjs`, which fails the release before `npm publish` runs
-   if the top `CHANGELOG.md` entry isn't a real ISO date matching both `package.json` and
-   the tag being released. This exists because `CHANGELOG.md` ships **inside** the
-   published tarball — it's built from the released commit before any post-publish fix
-   could ever run — and **once a version is published, npm will not let it be
-   re-published or edited.** An undated (or wrongly dated) changelog entry on an already-
-   live version is permanent; the only fix is a new version. Get the date right before you
-   tag, not after.
-2. If the change instead touches `.github/` — most importantly `release.yml` itself —
-   it must go through a PR, and `.github/CODEOWNERS` requires that PR to be approved by
-   an owner before it can merge. This is deliberate: an unreviewed edit to the publish
-   workflow could grant publish rights to a different repo/branch/environment, which
-   would defeat the whole point of the required-reviewer gate on the workflow it edits.
-   Direct pushes to `.github/` remain technically possible for repo admins (branch
-   protection does not block admins here — see `enforce_admins` on the branch protection
-   settings) but should not be used for this path; treat the PR+review step as real, not
-   optional, specifically for `.github/`.
+   **The release will fail if you skip the changelog date.** `release.yml`'s `verify` job
+   runs `scripts/check-changelog-date.mjs`, which fails the release before `npm publish`
+   runs if the top `CHANGELOG.md` entry isn't a real ISO date matching both `package.json`
+   and the tag being released. **`CHANGELOG.md` does not ship inside the published
+   tarball** — verified directly with `npm pack` + `tar -tzf`: only what `package.json`'s
+   `files` field lists (`dist`, `bin`) plus npm's always-included `package.json`/
+   `README.md`/`LICENSE` are in it. The actual reason to get this right before tagging is
+   simpler and holds regardless: `CHANGELOG.md` in this repo is the permanent, public
+   record of what shipped in each release, and a release cut while the top entry still
+   reads "Unreleased" or "TBD" is a real, visible defect in that record at exactly the
+   moment it's supposed to be authoritative. (The repo file itself *can* be corrected
+   afterward if this gate is ever bypassed or fails to catch a bad entry — see the
+   `ac94053` commit, which did exactly that for `0.1.12` — but a release should never
+   depend on needing that fix.)
+2. If the change additionally touches `.github/` — most importantly `release.yml` itself —
+   `.github/CODEOWNERS` requires that PR to be approved by an owner before it can merge, on
+   top of the plain PR requirement every change already has. This is deliberate: an
+   unreviewed edit to the publish workflow could grant publish rights to a different
+   repo/branch/environment, which would defeat the whole point of the required-reviewer
+   gate on the workflow it edits.
 3. Cut the release, which is what actually triggers `release.yml`:
    ```
    gh release create vX.Y.Z --title "vX.Y.Z" --notes-from-tag

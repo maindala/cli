@@ -2,16 +2,19 @@
 // Release-time gate: the CHANGELOG.md entry for the version being released must carry a
 // real ISO date before the npm tarball is built and published.
 //
-// Why this doesn't just stamp the date for you: CHANGELOG.md ships INSIDE the published
-// tarball (it's in this package's `files` list), built from the released commit before
-// `npm publish` runs. A step that wrote the date automatically would have to run either
-// after publish (too late — the tarball is already built and immutable) or on the same
-// job that holds publish rights via OIDC, which would need `contents: write` there — a
-// real privilege increase on the single most sensitive workflow this repo has. Neither is
-// acceptable, so this stays a gate, not a fix: it runs in the existing `verify` job
-// (contents: read, no new permissions) and fails the release loudly and early if the top
-// CHANGELOG.md entry isn't a real, matching, dated heading. Fixing it then costs a commit
-// and a re-cut release — cheap, because nothing has shipped yet.
+// Why this doesn't just stamp the date for you: a step that wrote the date automatically
+// would have to run either after publish (too late to affect the release it was meant to
+// fix) or on the same job that holds publish rights via OIDC, which would need
+// `contents: write` there — a real privilege increase on the single most sensitive
+// workflow this repo has. Neither is acceptable, so this stays a gate, not a fix: it runs
+// in the existing `verify` job (contents: read, no new permissions) and fails the release
+// loudly and early if the top CHANGELOG.md entry isn't a real, matching, dated heading.
+// Fixing it then costs a commit and a re-cut release — cheap, because nothing has shipped
+// yet. (CHANGELOG.md does NOT ship inside the npm tarball — it's not in this package's
+// `files` list, and `npm pack` + `tar -tzf` confirms it's absent — so this gate isn't
+// protecting tarball content. It's protecting CHANGELOG.md itself: the permanent, public
+// record of what shipped, which should already be correct at the moment a release becomes
+// authoritative, not fixed up after the fact.)
 //
 // Run in CI: node scripts/check-changelog-date.mjs (release.yml sets RELEASE_TAG for it).
 // Run locally to rehearse a release, or to watch this gate fail on purpose:
