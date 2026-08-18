@@ -321,4 +321,119 @@ program
     process.exit(result.exitCode);
   });
 
+program
+  .command('scan [path]')
+  .description(
+    'Discover AI agents and MCP integrations in a local codebase — no account\n' +
+    '  or API key needed for the report itself, and it always completes even\n' +
+    '  offline. (One unauthenticated lookup per MCP server found is attempted\n' +
+    '  against the public catalog for context, not required — see DATA.md for\n' +
+    '  the exact per-flag breakdown of what is ever sent, and to whom.)\n\n' +
+    '  Detects, in three confidence tiers: agent/LLM dependencies declared in\n' +
+    '  package.json/requirements.txt/pyproject.toml/go.mod (high); MCP client\n' +
+    '  config or crew/agent definition files (high); source-code patterns like\n' +
+    '  StateGraph(/Crew(/new Client( (low — never auto-registered).\n\n' +
+    '  `--format sarif --output scan.sarif` emits an OASIS SARIF 2.1.0 report plus\n' +
+    '  a sidecar manifest.json (SHA-256 digest) you can sign with your own\n' +
+    '  infrastructure — this local artifact is a complete record independent of\n' +
+    '  anything pushed to mAIndala. `--timestamp` additionally fetches a free\n' +
+    '  RFC 3161 token over that digest from a public Time-Stamp Authority.\n\n' +
+    '  `--register --org <slug>` pushes findings into that org\'s governed agent\n' +
+    '  registry (requires `maindala login <mk_...>` as a member of the org).\n' +
+    '  Metadata only by default — pass --include-definitions to also send file\n' +
+    '  content for server-side trust scanning.'
+  )
+  .option('--json', 'print findings as JSON to stdout (shorthand for --format json)')
+  .option('--format <format>', 'table (default) | json | sarif')
+  .option('--output <path>', 'write the report to this path instead of stdout (required for sarif)')
+  .option('--timestamp', 'fetch an RFC 3161 timestamp token over the manifest digest (requires --format sarif --output)')
+  .option('--register', 'push findings into a governed org registry')
+  .option('--org <slug>', 'org slug to register into (required with --register)')
+  .option('--include-definitions', 'send file content with --register, enabling server-side trust scanning')
+  .action(async (scanPath: string | undefined, options: {
+    json?: boolean; format?: string; output?: string; timestamp?: boolean;
+    register?: boolean; org?: string; includeDefinitions?: boolean;
+  }) => {
+    const { scanDirectory, toTable, toSarif, toManifest, serializeSarif, writeOutput } = await import('./scan.js');
+    const { matchCatalog, registerDiscovered } = await import('./api.js');
+
+    const format = options.format ?? (options.json ? 'json' : 'table');
+    if (!['table', 'json', 'sarif'].includes(format)) {
+      console.error(`Invalid --format "${format}" — expected table, json, or sarif.`);
+      process.exit(1);
+    }
+    if (options.register && !options.org) {
+      console.error('--register requires --org <slug>.');
+      process.exit(1);
+    }
+    if (options.timestamp && format !== 'sarif') {
+      console.error('--timestamp requires --format sarif --output <path>.');
+      process.exit(1);
+    }
+
+    const root = scanPath ?? '.';
+    const findings = await scanDirectory({ root, matchCatalog });
+
+    if (format === 'table') {
+      for (const line of toTable(findings)) console.log(line);
+    } else if (format === 'json') {
+      const json = JSON.stringify(findings, null, 2);
+      if (options.output) writeOutput(options.output, Buffer.from(json + '\n', 'utf8'));
+      else console.log(json);
+    } else {
+      if (!options.output) {
+        console.error('--format sarif requires --output <path>.');
+        process.exit(1);
+      }
+      const sarif = toSarif(findings, pkg.version);
+      const sarifBytes = serializeSarif(sarif);
+      writeOutput(options.output, sarifBytes);
+
+      const manifest = toManifest(sarifBytes, path.basename(options.output), `maindala@${pkg.version}`);
+      if (options.timestamp) {
+        const { requestTimestamp } = await import('./tsa-client.js');
+        const digestBytes = Buffer.from(manifest.digest, 'hex');
+        const token = await requestTimestamp(digestBytes);
+        if (token) {
+          manifest.timestampToken = token.toString('base64');
+          console.log('✓ RFC 3161 timestamp obtained.');
+        } else {
+          console.log('⚠ Could not obtain an RFC 3161 timestamp (TSA unreachable or declined) — continuing without one.');
+        }
+      }
+      const manifestPath = path.join(path.dirname(options.output), 'manifest.json');
+      writeOutput(manifestPath, Buffer.from(JSON.stringify(manifest, null, 2) + '\n', 'utf8'));
+      console.log(`✓ Wrote ${options.output} and ${manifestPath} (${findings.length} finding${findings.length === 1 ? '' : 's'}).`);
+    }
+
+    if (options.register) {
+      const apiKey = getApiKey();
+      if (!apiKey) {
+        console.error('No API key configured. Run: maindala login <mk_...>');
+        process.exit(1);
+      }
+      const scanRef = `repo:${path.basename(path.resolve(root))}`;
+      const payload = findings.map((f) => ({
+        sourceRef: f.sourceRef,
+        name: f.name,
+        platform: f.platform,
+        purpose: f.purpose,
+        confidence: f.confidence,
+        evidence: { tier: f.tier, signal: f.signal, file: f.filePath },
+        catalogMatches: f.catalogMatches.map((m) => ({ slug: m.slug, kind: m.kind })),
+        definition: options.includeDefinitions ? { file: f.filePath, signal: f.signal } : undefined,
+      }));
+      try {
+        const result = await registerDiscovered(options.org!, scanRef, payload);
+        console.log(
+          `✓ Registered into "${options.org}": ${result.created} created, ${result.updated} updated, ` +
+          `${result.skipped} skipped${result.skipped > 0 ? ` (${JSON.stringify(result.skippedReasons)})` : ''}.`
+        );
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    }
+  });
+
 program.parse();

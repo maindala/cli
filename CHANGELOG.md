@@ -6,6 +6,35 @@ against what is actually live on npm (`npm view maindala versions`/`npm view mai
 checked 2026-08-11), not just what shipped in source. This is the first release with a
 CHANGELOG.md — everything through 0.1.11 is a historical backfill.
 
+## [0.2.0] - 2026-08-17
+
+### Added
+- `maindala scan [path]` — discovers AI agents and MCP integrations in a local codebase.
+  No account or API key required for the local report, and it completes even offline.
+  Three confidence tiers: dependency manifests (`package.json`/`requirements.txt`/
+  `pyproject.toml`/`go.mod`, high confidence), MCP client config / crew-agent definition
+  files (`.mcp.json`/`claude_desktop_config.json`/`crew.yaml`/`agents.yaml`, high
+  confidence), and source-code patterns (`StateGraph(`, `Crew(`, `new Client(`, low
+  confidence — **never** auto-registered, even with `--register`). MCP servers found in a
+  config file are matched against the public catalog for context (trust status, check
+  count) via one unauthenticated lookup per server.
+- `--format sarif --output <path>` emits an OASIS SARIF 2.1.0 report plus a sidecar
+  `manifest.json` (SHA-256 digest, versioned format) — a local, signable record the caller
+  can hand to their own signing infrastructure (cosign, GPG, an in-house TSA) before
+  anything is pushed to mAIndala. Output is byte-deterministic across repeated runs against
+  unchanged input (sorted results, no wall-clock timestamp in the signed body,
+  repo-relative paths only — see the test suite's dedicated determinism checks).
+- `--timestamp` additionally fetches a free RFC 3161 timestamp token over the manifest
+  digest from a public Time-Stamp Authority (`https://freetsa.org/tsr` by default,
+  overridable via `MAINDALA_TSA_URL`), anchoring the local record to a third party without
+  mAIndala retaining anything.
+- `--register --org <slug>` pushes findings into that org's governed agent registry
+  (requires `maindala login <mk_...>` as a member of the org — not an admin-only action).
+  Metadata only by default; `--include-definitions` additionally sends the specific
+  evidence that triggered each finding, enabling server-side trust scanning.
+- `DATA.md` — documents exactly what every command transmits, and to whom, including the
+  new per-flag breakdown for `scan`.
+
 ## [0.1.12] - 2026-08-11
 
 Date corrected after the fact (confirmed via `npm view maindala time --json`, not
