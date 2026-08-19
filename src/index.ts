@@ -243,7 +243,10 @@ program
     '    events / 1 hour, whichever comes first.\n\n' +
     '  Org-governed tier: `maindala tail <org-slug>`\n' +
     '    Requires an mk_ personal API key belonging to an owner/admin of\n' +
-    '    <org-slug> (run `maindala login <mk_...>` first).\n\n' +
+    '    <org-slug> (run `maindala login <mk_...>` first). Also streams [alert]\n' +
+    '    events from the org\'s detection sweep (rule, severity, subject, status)\n' +
+    '    alongside [tool]/[a2a] decisions — org-scoped only, since alerts come\n' +
+    '    from that org\'s own sweep and have no free-tier equivalent.\n\n' +
     '  Already have an mt_ token saved (`maindala login <mt_...>`)? Just run\n' +
     '  `maindala tail` with no org-slug.'
   )
@@ -309,10 +312,11 @@ program
 program
   .command('verify-pack <directory>')
   .description(
-    'Offline-verify a downloaded Compliance Evidence Pack.\n' +
-    '  Checks every section file against manifest.json\'s digests and, if present,\n' +
-    '  validates the RFC 3161 timestamp token — no mAIndala account or network access\n' +
-    '  needed beyond having downloaded the pack\'s files into <directory>.'
+    'Offline-verify a downloaded Compliance Evidence Pack, or a `maindala scan\n' +
+    '  --format sarif` output directory — detected automatically from manifest.json\'s\n' +
+    '  shape, no flag needed. Either way: checks the artifact\'s digest against\n' +
+    '  manifest.json and, if present, validates the RFC 3161 timestamp token — no\n' +
+    '  mAIndala account or network access needed beyond having the files in <directory>.'
   )
   .action(async (directory: string) => {
     const { verifyPack } = await import('./verify-pack.js');

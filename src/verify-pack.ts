@@ -103,7 +103,97 @@ export interface VerifyPackResult {
   lines: string[];
 }
 
+// Shadow AI Discovery P1 task 10 (SAD-20): `maindala scan --format sarif` (task 4) writes a
+// manifest.json shaped nothing like an evidence pack's — no `sections` array, instead
+// manifestVersion/artifact/digestAlgorithm/digest/toolVersion/timestampToken (see scan.ts's
+// ScanManifest). Both kinds share the filename `manifest.json`, so kind is detected by shape,
+// not by name. Deliberately a SEPARATE code path from the evidence-pack logic below, not a
+// shared branch inside it — these are two different trust models (mAIndala-signed pack vs
+// customer-signed scan) and conflating them risks one day validating a scan against
+// evidence-pack rules or vice versa.
+interface ScanManifestShape {
+  manifestVersion: number;
+  artifact: string;
+  digestAlgorithm: string;
+  digest: string;
+  toolVersion?: string;
+  timestampToken?: string | null;
+}
+
+function isScanManifest(manifest: unknown): manifest is ScanManifestShape {
+  if (typeof manifest !== 'object' || manifest === null) return false;
+  const m = manifest as Record<string, unknown>;
+  return typeof m['manifestVersion'] === 'number' && typeof m['artifact'] === 'string' && !('sections' in m);
+}
+
+async function verifyScanManifest(dir: string, manifest: ScanManifestShape): Promise<VerifyPackResult> {
+  const lines: string[] = [];
+  if (manifest.manifestVersion !== 1) {
+    return { ok: false, exitCode: 1, lines: [`Unsupported scan manifest version ${manifest.manifestVersion} — this verify-pack only understands version 1.`] };
+  }
+  if (manifest.digestAlgorithm !== 'sha256') {
+    return { ok: false, exitCode: 1, lines: [`Unsupported digest algorithm "${manifest.digestAlgorithm}" — this verify-pack only understands sha256.`] };
+  }
+
+  // manifest.artifact names a sibling file and comes from the manifest being verified —
+  // untrusted input by definition, same confinement rules as an evidence-pack section name.
+  try {
+    assertFlatSegment(manifest.artifact, 'artifact name');
+  } catch {
+    return { ok: false, exitCode: 1, lines: [`✗ ${manifest.artifact}: invalid artifact name (path separators are not allowed)`] };
+  }
+  let artifactPath: string;
+  try {
+    artifactPath = resolveWithinRoot(dir, manifest.artifact);
+  } catch {
+    return { ok: false, exitCode: 1, lines: [`✗ ${manifest.artifact}: invalid artifact name (resolves outside the pack directory)`] };
+  }
+  if (!existsSync(artifactPath)) {
+    return { ok: false, exitCode: 2, lines: [`✗ ${manifest.artifact}: file missing`] };
+  }
+  const stat = lstatSync(artifactPath);
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    return { ok: false, exitCode: 1, lines: [`✗ ${manifest.artifact}: not a regular file (symlinks are rejected)`] };
+  }
+
+  const artifactBytes = readFileSync(artifactPath);
+  const actualDigest = crypto.createHash('sha256').update(artifactBytes).digest('hex');
+  let allOk = true;
+  if (actualDigest !== manifest.digest) {
+    // Same non-disclosure rule as the evidence-pack path — never print the recomputed digest
+    // of an attacker-influenced path.
+    lines.push(`✗ ${manifest.artifact}: digest mismatch`);
+    allOk = false;
+  } else {
+    lines.push(`✓ ${manifest.artifact} (sha256 matches manifest)`);
+  }
+
+  let tstValid: boolean | undefined;
+  if (manifest.timestampToken) {
+    // verifyTimestampToken hashes `data` itself internally (matching how the TSA computed
+    // messageImprint.hashedMessage = sha256(originalContent) at request time — see
+    // tsa-client.ts's requestTimestamp) and compares. The "original content" the request was
+    // over is the ARTIFACT, not manifest.digest — manifest.digest already IS that hash, so
+    // passing it here would hash it a second time and can never match. Real bug caught live:
+    // a genuine token from a real TSA round trip reported INVALID before this fix, because
+    // digestBytes (already sha256(artifact)) was being re-hashed instead of the artifact
+    // itself.
+    const tokenDer = Buffer.from(manifest.timestampToken, 'base64');
+    tstValid = await verifyTimestampToken(tokenDer, artifactBytes);
+    lines.push('', `RFC 3161 timestamp: ${tstValid ? 'VALID' : 'INVALID'}`);
+  } else {
+    lines.push('', 'No timestampToken in manifest.json — self-consistency check only.');
+  }
+
+  const ok = allOk && tstValid !== false;
+  lines.push('', `Result: ${ok ? 'INTACT' : 'TAMPERED OR INCOMPLETE'}`);
+  return { ok, exitCode: ok ? 0 : 1, lines };
+}
+
 // Core verification logic — exported for testability, called by the CLI action below.
+// Reads manifest.json once and dispatches by shape; the evidence-pack path below is
+// unchanged from before scan-manifest support existed (SAD-20: "the existing evidence-pack
+// verification path is unchanged and regression-tested").
 export async function verifyPack(dir: string): Promise<VerifyPackResult> {
   const lines: string[] = [];
   const manifestPath = join(dir, 'manifest.json');
@@ -117,6 +207,10 @@ export async function verifyPack(dir: string): Promise<VerifyPackResult> {
     manifest = JSON.parse(manifestBytes.toString('utf-8'));
   } catch {
     return { ok: false, exitCode: 1, lines: ['manifest.json is not valid JSON — the pack is not usable'] };
+  }
+
+  if (isScanManifest(manifest)) {
+    return verifyScanManifest(dir, manifest);
   }
 
   const sections = manifest.sections ?? [];

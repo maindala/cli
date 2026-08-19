@@ -3,6 +3,14 @@
 // opaque `since` cursor those routes now accept, and renders a live, colorized,
 // merged stream of an org's governed tool calls + A2A delegations. Metadata only —
 // these endpoints never carry prompts/args/results, only tool/target/decision/latency.
+//
+// Shadow AI Discovery P1 task 10 (SAD-11): also polls governance-alerts with the same
+// cursor pattern, adding an 'alert' event kind to the org-scoped stream. Deliberately
+// org-scoped only — governance_alerts is inherently org-scoped (produced by that org's
+// detection sweep) and the route requires the same admin-gated mk_/session auth as
+// gateway-activity/a2a-activity, so it has no equivalent on the free, zero-setup mt_ tier
+// (which isn't tied to any org). Metadata only here too: rule id, severity, title, subject
+// name, status, occurrence count — no raw evidence.
 
 // Overridable via MAINDALA_CATALOG_URL so a future URL rotation doesn't
 // require every installed copy of this CLI to be upgraded before it works.
@@ -63,10 +71,24 @@ interface A2aLogRow {
   latencyMs: number | null;
   createdAt: string;
 }
+export interface AlertRow {
+  id: string;
+  ruleId: string;
+  severity: string;
+  title: string;
+  status: string;
+  subjectName: string | null;
+  subjectId: string;
+  occurrenceCount: number;
+  lastSeenAt: string;
+}
 
 // ─── Normalized tail event ────────────────────────────────────────────────────
-interface TailEvent {
-  kind: 'tool_call' | 'a2a_call';
+// alert events reuse `tool`/`target` for ruleId/subjectName (rather than a discriminated
+// union) to keep the single dedup/filter/render pipeline below — `decision` is unused for
+// alerts (status/severity/occurrenceCount carry the alert-specific fields instead).
+export interface TailEvent {
+  kind: 'tool_call' | 'a2a_call' | 'alert';
   ts: string;
   tool: string;
   target: string;
@@ -74,6 +96,10 @@ interface TailEvent {
   latencyMs: number | null;
   cursorId: string;
   cursorT: string;
+  severity?: string;
+  status?: string;
+  occurrenceCount?: number;
+  title?: string;
 }
 
 function toTailEvent(kind: 'tool_call' | 'a2a_call', row: GatewayLogRow | A2aLogRow): TailEvent {
@@ -91,6 +117,14 @@ function toTailEvent(kind: 'tool_call' | 'a2a_call', row: GatewayLogRow | A2aLog
   };
 }
 
+export function toAlertTailEvent(row: AlertRow): TailEvent {
+  return {
+    kind: 'alert', ts: row.lastSeenAt, tool: row.ruleId, target: row.subjectName ?? row.subjectId.slice(0, 8),
+    decision: '', latencyMs: null, cursorId: row.id, cursorT: row.lastSeenAt,
+    severity: row.severity, status: row.status, occurrenceCount: row.occurrenceCount, title: row.title,
+  };
+}
+
 // ─── ANSI color (no dependency — this is the only place the CLI colorizes) ───
 const COLOR: Record<string, string> = {
   allow: '\x1b[32m',   // green
@@ -100,11 +134,23 @@ const COLOR: Record<string, string> = {
   telemetry: '\x1b[2m', // dim
   observed: '\x1b[2m',  // dim
 };
+// Alert coloring keys off severity, not decision (alerts don't have one).
+const SEVERITY_COLOR: Record<string, string> = {
+  critical: '\x1b[31m', // red
+  high:     '\x1b[31m', // red
+  medium:   '\x1b[33m', // amber
+  low:      '\x1b[2m',  // dim
+};
 const RESET = '\x1b[0m';
 
-function renderLine(e: TailEvent): string {
-  const color = COLOR[e.decision] ?? '';
+export function renderLine(e: TailEvent): string {
   const time = new Date(e.ts).toLocaleTimeString();
+  if (e.kind === 'alert') {
+    const color = SEVERITY_COLOR[e.severity ?? ''] ?? '';
+    const repeat = (e.occurrenceCount ?? 1) > 1 ? ` (×${e.occurrenceCount})` : '';
+    return `${color}${time}  [alert]  ${e.tool} → ${e.target}  ${e.severity}  ${e.title}${repeat}  status=${e.status}${RESET}`;
+  }
+  const color = COLOR[e.decision] ?? '';
   const latency = e.latencyMs != null ? `${e.latencyMs}ms` : '—';
   const kindLabel = e.kind === 'a2a_call' ? 'a2a' : 'tool';
   return `${color}${time}  [${kindLabel}]  ${e.tool} → ${e.target}  ${e.decision}  ${latency}${RESET}`;
@@ -126,6 +172,22 @@ async function fetchActivity(
   return res.json() as Promise<(GatewayLogRow | A2aLogRow)[]>;
 }
 
+// Same cursor contract as fetchActivity, against governance-alerts (task 10, SAD-11) —
+// cursored on last_seen_at server-side, so a dedup-bumped "still happening" alert is a
+// real event here, not just a first-occurrence one.
+async function fetchAlerts(orgSlug: string, apiKey: string, since: string | null): Promise<AlertRow[]> {
+  const qs = new URLSearchParams({ limit: '50' });
+  if (since) qs.set('since', since);
+  const res = await fetch(`${BASE_URL}/orgs/${encodeURIComponent(orgSlug)}/governance-alerts?${qs.toString()}`, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (res.status === 403 || res.status === 404) {
+    throw new Error(`Org "${orgSlug}" not found, or your key isn't an admin there.`);
+  }
+  if (!res.ok) throw new Error(`Failed to fetch governance-alerts: HTTP ${res.status}`);
+  return res.json() as Promise<AlertRow[]>;
+}
+
 // Finds the row with the max (createdAt, id) tuple, regardless of the array's sort
 // order — the initial cursor-less fetch returns DESC (newest first), while
 // cursor-based polls return ASC (oldest-of-new-batch first). Comparing by id as a
@@ -139,6 +201,17 @@ function newestRow<T extends { createdAt: string; id: string }>(rows: T[]): T | 
   return rows.reduce((max, r) => {
     if (r.createdAt > max.createdAt) return r;
     if (r.createdAt === max.createdAt && r.id > max.id) return r;
+    return max;
+  });
+}
+
+// Same tie-break logic as newestRow, keyed on last_seen_at instead of created_at —
+// governance-alerts' cursor field (see fetchAlerts).
+export function newestAlertRow(rows: AlertRow[]): AlertRow | undefined {
+  if (rows.length === 0) return undefined;
+  return rows.reduce((max, r) => {
+    if (r.lastSeenAt > max.lastSeenAt) return r;
+    if (r.lastSeenAt === max.lastSeenAt && r.id > max.id) return r;
     return max;
   });
 }
@@ -173,12 +246,33 @@ class SeenIds {
   }
 }
 
+// tool_call/a2a_call rows are immutable once logged — the same id can only legitimately
+// reappear because of the cursor's inclusive `>=` boundary (see activity-cursor.ts), and
+// showing it twice would be a real duplicate. An alert row is different: the SAME id
+// legitimately reappears with genuinely NEW information (occurrence_count bumped, a later
+// last_seen_at) whenever the sweep sees the condition again — that's the whole point of
+// SAD-11's "still happening" tail event, not a duplicate. Real bug caught live: keying dedup
+// on cursorId alone silently swallowed every repeat-occurrence alert after its first
+// sighting, because SeenIds had already marked that id seen and never unmarks it. Folding
+// occurrenceCount into the dedup key for alerts (bare cursorId for everything else) fixes
+// it — a bump produces a new key, a genuine re-delivery of unchanged data still doesn't.
+function dedupKey(e: TailEvent): string {
+  return e.kind === 'alert' ? `${e.cursorId}:${e.occurrenceCount ?? 1}` : e.cursorId;
+}
+
 // Shared by both the org-scoped (P1) and free-tier (P2) tail loops: dedup by id,
 // apply --filter-*, sort chronologically, render. Kept as one function so a
 // change to the dedup/filter/render contract only needs to happen once.
-function createBatchPrinter(options: TailOptions): (events: TailEvent[]) => void {
+export function createBatchPrinter(options: TailOptions): (events: TailEvent[]) => void {
   const seen = new SeenIds();
+  // --filter-decision/--filter-tool are documented (and were built) for tool_call/a2a_call
+  // events — decision means allow/deny/etc, tool means a tool/call_agent name. Neither
+  // concept maps cleanly onto an alert (no decision; `tool` reuses the field for ruleId,
+  // which isn't what a user typing --filter-tool "search" means). Alerts bypass both filters
+  // entirely rather than silently disappearing under a filter whose semantics don't apply to
+  // them — a structurally different kind of event, always shown.
   const matchesFilter = (e: TailEvent): boolean => {
+    if (e.kind === 'alert') return true;
     if (options.filterDecision && e.decision !== options.filterDecision) return false;
     if (options.filterTool && e.tool !== options.filterTool) return false;
     return true;
@@ -188,16 +282,15 @@ function createBatchPrinter(options: TailOptions): (events: TailEvent[]) => void
     // Dedup against already-processed ids first (independent of the display
     // filter) — a row excluded by --filter-* must still be marked seen, or it
     // would be re-fetched and re-evaluated on every single poll forever.
-    const unseen = events.filter((e) => !seen.hasSeen(e.cursorId));
-    for (const e of unseen) seen.markSeen(e.cursorId);
+    const unseen = events.filter((e) => !seen.hasSeen(dedupKey(e)));
+    for (const e of unseen) seen.markSeen(dedupKey(e));
 
     const sorted = unseen.filter(matchesFilter).sort((a, b) => a.ts.localeCompare(b.ts));
     for (const e of sorted) {
       if (options.json) {
-        console.log(JSON.stringify({
-          kind: e.kind, ts: e.ts, tool: e.tool, target: e.target,
-          decision: e.decision, latencyMs: e.latencyMs,
-        }));
+        console.log(JSON.stringify(e.kind === 'alert'
+          ? { kind: e.kind, ts: e.ts, ruleId: e.tool, subject: e.target, severity: e.severity, title: e.title, status: e.status, occurrenceCount: e.occurrenceCount }
+          : { kind: e.kind, ts: e.ts, tool: e.tool, target: e.target, decision: e.decision, latencyMs: e.latencyMs }));
       } else {
         console.log(renderLine(e));
       }
@@ -208,6 +301,7 @@ function createBatchPrinter(options: TailOptions): (events: TailEvent[]) => void
 export async function tailActivity(orgSlug: string, apiKey: string, options: TailOptions): Promise<void> {
   let gatewayCursor: string | null = options.since ? encodeTimeLookbackCursor(parseDuration(options.since)) : null;
   let a2aCursor: string | null = gatewayCursor;
+  let alertCursor: string | null = gatewayCursor;
   const printBatch = createBatchPrinter(options);
 
   // Initial fetch: bootstrap cursors from the newest row of each stream (or the
@@ -217,14 +311,16 @@ export async function tailActivity(orgSlug: string, apiKey: string, options: Tai
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const [gatewayRows, a2aRows] = await Promise.all([
+    const [gatewayRows, a2aRows, alertRows] = await Promise.all([
       fetchActivity(orgSlug, apiKey, 'gateway-activity', gatewayCursor),
       fetchActivity(orgSlug, apiKey, 'a2a-activity', a2aCursor),
+      fetchAlerts(orgSlug, apiKey, alertCursor),
     ]);
 
     const events = [
       ...gatewayRows.map((r) => toTailEvent('tool_call', r)),
       ...a2aRows.map((r) => toTailEvent('a2a_call', r)),
+      ...alertRows.map(toAlertTailEvent),
     ];
     printBatch(events);
 
@@ -232,6 +328,8 @@ export async function tailActivity(orgSlug: string, apiKey: string, options: Tai
     if (newestGateway) gatewayCursor = encodeCursor(newestGateway.createdAt, newestGateway.id);
     const newestA2a = newestRow(a2aRows as A2aLogRow[]);
     if (newestA2a) a2aCursor = encodeCursor(newestA2a.createdAt, newestA2a.id);
+    const newestAlert = newestAlertRow(alertRows);
+    if (newestAlert) alertCursor = encodeCursor(newestAlert.lastSeenAt, newestAlert.id);
 
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
   }

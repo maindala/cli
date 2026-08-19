@@ -1,0 +1,49 @@
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "maindala-scan",
+          "version": "0.2.0",
+          "informationUri": "https://github.com/maindala/cli",
+          "rules": [
+            {
+              "id": "tier-1",
+              "name": "DependencyManifest",
+              "shortDescription": {
+                "text": "Agent/LLM dependency declared in a manifest file"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "tier-1",
+          "level": "warning",
+          "message": {
+            "text": "langgraph usage in package.json"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "package.json"
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "maindalaSourceRef": "repo:fixture#package.json"
+          },
+          "properties": {
+            "confidence": "high",
+            "signal": "langgraph@^0.2.1"
+          }
+        }
+      ]
+    }
+  ]
+}
