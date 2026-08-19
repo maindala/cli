@@ -6,6 +6,27 @@ against what is actually live on npm (`npm view maindala versions`/`npm view mai
 checked 2026-08-11), not just what shipped in source. This is the first release with a
 CHANGELOG.md — everything through 0.1.11 is a historical backfill.
 
+## [0.3.0] - 2026-08-19
+
+### Added
+- `maindala tail <org-slug>` now streams `[alert]` events from the org's detection sweep
+  (rule id, severity, subject, title, status, occurrence count) alongside existing
+  `[tool]`/`[a2a]` decisions — org-scoped only, since alerts are inherently org-scoped and
+  the endpoint requires the same admin-gated key as the existing streams; no free/mt_-tier
+  equivalent. A repeating alert (occurrence count bumped by the sweep's dedup) is shown
+  again as "still happening," not just on first sighting.
+- `maindala verify-pack <directory>` now also verifies a `maindala scan --format sarif`
+  output directory (manifest.json + artifact), detected automatically from the manifest's
+  shape — no flag needed. Checks the artifact's digest and, if present, the RFC 3161
+  timestamp token. The existing Compliance Evidence Pack verification path is unchanged.
+
+### Fixed
+- `verify-pack`'s RFC 3161 timestamp check for a scan manifest was verifying against the
+  already-hashed digest bytes instead of the original artifact bytes, causing every
+  genuine timestamp token to report INVALID — caught via a real TSA round trip during
+  development, not a synthetic test. Fixed before this ever shipped; a frozen fixture from
+  that real round trip now regression-tests it.
+
 ## [0.2.0] - 2026-08-17
 
 ### Added
