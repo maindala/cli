@@ -251,12 +251,14 @@ program
     '  `maindala tail` with no org-slug.'
   )
   .option('--signup <email>', 'mint a free mt_ telemetry token and save it, then start tailing')
+  .option('--company <name>', 'company to associate with a --signup (optional; not consent by itself)')
+  .option('--contact-me', 'opt in to be contacted about mAIndala products (only applies with --signup)')
   .option('--json', 'emit raw NDJSON instead of colorized lines')
   .option('--filter-decision <decision>', 'only show events with this decision (allow|deny|redact|flag)')
   .option('--filter-tool <tool>', 'only show events for this tool/call_agent name')
   .option('--since <duration>', 'initial lookback window, e.g. 30s, 10m, 2h (default: last 50 events)')
-  .action(async (orgSlug: string | undefined, options: { signup?: string; json?: boolean; filterDecision?: string; filterTool?: string; since?: string }) => {
-    const { tailActivity, tailFreeStream, signupForTelemetryToken } = await import('./tail.js');
+  .action(async (orgSlug: string | undefined, options: { signup?: string; company?: string; contactMe?: boolean; json?: boolean; filterDecision?: string; filterTool?: string; since?: string }) => {
+    const { tailActivity, tailFreeStream, signupForTelemetryToken, isInteractive, promptForConsent } = await import('./tail.js');
     const tailOptions = {
       json: options.json,
       filterDecision: options.filterDecision,
@@ -266,7 +268,18 @@ program
 
     try {
       if (options.signup) {
-        const token = await signupForTelemetryToken(options.signup);
+        // Telemetry Signup Consented Lead Capture (design §4/§7): if either flag was
+        // passed, honor it exactly and never prompt — an explicit --company alone is
+        // NOT consent, matching the server's own rule that company and contactOptIn
+        // are independent. Only prompt when the caller gave us nothing to go on AND
+        // we're genuinely interactive; a non-TTY invocation with no flags gets no
+        // prompt and no lead, full stop (design's non-negotiable rule).
+        const flagsGiven = options.company !== undefined || options.contactMe !== undefined;
+        const consent = flagsGiven
+          ? { company: options.company, contactOptIn: Boolean(options.contactMe) }
+          : isInteractive() ? await promptForConsent() : {};
+
+        const token = await signupForTelemetryToken(options.signup, consent);
         saveApiKey(token);
         console.log(`✓ Free telemetry token saved to ~/.maindala/config.json (${token.slice(0, 11)}...)\n`);
         await tailFreeStream(token, tailOptions);

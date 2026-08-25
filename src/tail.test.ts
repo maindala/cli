@@ -3,7 +3,7 @@
 // polling loop itself (an unbounded `while (true)`, not a natural fit for a fast unit test) —
 // these are the exact functions that carry the new alert-specific logic.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { toAlertTailEvent, renderLine, newestAlertRow, createBatchPrinter, type AlertRow } from './tail.js';
+import { toAlertTailEvent, renderLine, newestAlertRow, createBatchPrinter, signupForTelemetryToken, isInteractive, type AlertRow } from './tail.js';
 
 function makeAlert(overrides: Partial<AlertRow> = {}): AlertRow {
   return {
@@ -119,5 +119,88 @@ describe('newestAlertRow — cursor advancement', () => {
 
   it('returns undefined for an empty batch — the caller must not advance the cursor on a quiet poll', () => {
     expect(newestAlertRow([])).toBeUndefined();
+  });
+});
+
+// ─── Telemetry Signup Consented Lead Capture ─────────────────────────────────────
+// See aidlc-docs/design-artifacts/telemetry-signup-consent-2026-08.md in the
+// maindala/maindala monorepo. Server-side behavior (dedup, opt_in_at, lead creation)
+// is already covered by real Postgres integration tests there — these tests cover
+// only what the CLI is responsible for: sending the right request shape, and never
+// prompting (or defaulting to consent) outside a real interactive terminal.
+
+function capturedBody(mockFetch: ReturnType<typeof vi.fn>): Record<string, unknown> {
+  const call = mockFetch.mock.calls[0];
+  const init = call?.[1] as RequestInit;
+  return JSON.parse(init.body as string) as Record<string, unknown>;
+}
+
+describe('signupForTelemetryToken — request shape', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('omits company/contactOptIn entirely when no consent argument is given — the exact pre-existing request shape, so an older server or a network trace sees no difference', async () => {
+    const mockFetch = vi.fn(async () => ({ ok: true, json: async () => ({ token: 'mt_x' }) } as Response));
+    vi.stubGlobal('fetch', mockFetch);
+
+    await signupForTelemetryToken('me@example.com');
+
+    const body = capturedBody(mockFetch);
+    expect(body['email']).toBe('me@example.com');
+    // JSON.stringify drops keys whose value is undefined — this is what makes the
+    // "backward compatible" claim literally true on the wire, not just in the types.
+    expect('company' in body).toBe(false);
+    expect('contactOptIn' in body).toBe(false);
+  });
+
+  it('sends company alone without contactOptIn when only a company was given', async () => {
+    const mockFetch = vi.fn(async () => ({ ok: true, json: async () => ({ token: 'mt_x' }) } as Response));
+    vi.stubGlobal('fetch', mockFetch);
+
+    await signupForTelemetryToken('me@example.com', { company: 'Acme' });
+
+    const body = capturedBody(mockFetch);
+    expect(body['company']).toBe('Acme');
+    // The CLI-side equivalent of the server's TSC-TC3: supplying a company must never
+    // imply consent by itself.
+    expect('contactOptIn' in body).toBe(false);
+  });
+
+  it('sends both company and contactOptIn:true on explicit opt-in', async () => {
+    const mockFetch = vi.fn(async () => ({ ok: true, json: async () => ({ token: 'mt_x' }) } as Response));
+    vi.stubGlobal('fetch', mockFetch);
+
+    await signupForTelemetryToken('me@example.com', { company: 'Acme', contactOptIn: true });
+
+    const body = capturedBody(mockFetch);
+    expect(body['company']).toBe('Acme');
+    expect(body['contactOptIn']).toBe(true);
+  });
+});
+
+describe('isInteractive — the TTY gate', () => {
+  const originalStdinTTY = process.stdin.isTTY;
+  const originalStdoutTTY = process.stdout.isTTY;
+
+  afterEach(() => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: originalStdinTTY, configurable: true });
+    Object.defineProperty(process.stdout, 'isTTY', { value: originalStdoutTTY, configurable: true });
+  });
+
+  it('is false when stdin is not a TTY, regardless of stdout', () => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: undefined, configurable: true });
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+    expect(isInteractive()).toBe(false);
+  });
+
+  it('is false when stdout is not a TTY, regardless of stdin — a redirected stdout means the prompt text itself would be invisible', () => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    Object.defineProperty(process.stdout, 'isTTY', { value: undefined, configurable: true });
+    expect(isInteractive()).toBe(false);
+  });
+
+  it('is true only when both stdin and stdout are real TTYs', () => {
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+    expect(isInteractive()).toBe(true);
   });
 });
