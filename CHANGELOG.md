@@ -6,7 +6,7 @@ against what is actually live on npm (`npm view maindala versions`/`npm view mai
 checked 2026-08-11), not just what shipped in source. This is the first release with a
 CHANGELOG.md — everything through 0.1.11 is a historical backfill.
 
-## [0.4.0] - 2026-08-24
+## [0.4.0] - 2026-08-25
 
 ### Added
 - `maindala tail --signup <email>` now accepts an optional `--company <name>` and a
