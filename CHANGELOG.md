@@ -6,6 +6,18 @@ against what is actually live on npm (`npm view maindala versions`/`npm view mai
 checked 2026-08-11), not just what shipped in source. This is the first release with a
 CHANGELOG.md — everything through 0.1.11 is a historical backfill.
 
+## [0.4.0] - 2026-08-24
+
+### Added
+- `maindala tail --signup <email>` now accepts an optional `--company <name>` and a
+  `--contact-me` flag. Neither is required — an existing script or CI job calling
+  `--signup` with no other flags behaves exactly as before. When you run
+  `--signup` interactively (a real terminal, no `--company`/`--contact-me` given) you're
+  now asked once for an optional company and whether mAIndala may email you about team
+  governance — declining (a bare Enter) is the default, and a non-interactive
+  invocation is never prompted. Opting in creates a follow-up contact request on
+  mAIndala's side; supplying a company alone does not.
+
 ## [0.3.0] - 2026-08-19
 
 ### Added

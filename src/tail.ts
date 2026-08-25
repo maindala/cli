@@ -372,16 +372,50 @@ async function fetchFreeStream(token: string, sinceMs: number | null): Promise<F
 // Mints a fresh mt_ token with zero prior setup — the whole point of the free
 // tier. Returns the plaintext token (shown once, matching every other key
 // family's issuance convention) so the caller can save it via saveApiKey.
-export async function signupForTelemetryToken(email: string): Promise<string> {
+// Telemetry Signup Consented Lead Capture: company/contactOptIn are both optional on
+// the server (backward compatible), so this signature is too — a caller that omits
+// `consent` entirely gets the exact pre-existing behavior. See the maindala/maindala
+// design doc aidlc-docs/design-artifacts/telemetry-signup-consent-2026-08.md §6-7.
+export async function signupForTelemetryToken(
+  email: string,
+  consent?: { company?: string; contactOptIn?: boolean },
+): Promise<string> {
   const res = await fetch(`${BASE_URL}/telemetry-signup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, company: consent?.company, contactOptIn: consent?.contactOptIn }),
   });
   if (res.status === 429) throw new Error('Too many signups from this network — try again in a minute.');
   if (!res.ok) throw new Error(`Signup failed: HTTP ${res.status}`);
   const data = await res.json() as { token: string };
   return data.token;
+}
+
+// Whether stdin AND stdout are both a real terminal — the only condition under which
+// it's safe to prompt. A CI run or piped invocation must never manufacture consent by
+// hanging on a prompt no one can answer (which would also silently opt someone in if a
+// hung process defaulted to "yes" instead of exiting) — see design §4's "not negotiable"
+// rules. Both streams matter: stdin could be a real TTY while stdout is redirected to a
+// file, in which case the prompt text itself would vanish and the user would be
+// answering blind.
+export function isInteractive(): boolean {
+  return Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY);
+}
+
+// Interactive consent prompt shown only when isInteractive() and neither --company nor
+// --contact-me was passed (index.ts decides that; this function just asks). Declining
+// (a bare Enter) is the default — [y/N], never [Y/n] — matching design §4 exactly.
+export async function promptForConsent(): Promise<{ company?: string; contactOptIn: boolean }> {
+  const { createInterface } = await import('node:readline/promises');
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    console.log('\n  Free telemetry token — no account needed.\n');
+    const company = (await rl.question('  Company (optional, press enter to skip): ')).trim();
+    const answer = (await rl.question('  Can we email you about team governance? [y/N]: ')).trim().toLowerCase();
+    return { company: company || undefined, contactOptIn: answer === 'y' || answer === 'yes' };
+  } finally {
+    rl.close();
+  }
 }
 
 export async function tailFreeStream(token: string, options: TailOptions): Promise<void> {
