@@ -84,6 +84,29 @@ found in a config file are matched against the public mAIndala catalog for
 context (trust status, check count) — see [DATA.md](./DATA.md) for exactly
 what is sent over the network in each mode, and to whom.
 
+## Verify a signed evidence log export (`verify-log`)
+
+```bash
+# Is the export internally consistent? (never "verified" on its own)
+npx maindala verify-log ./export
+
+# Is it consistent AND signed by a key you trust? trust.json comes from outside the export
+npx maindala verify-log ./export --trust trust.json
+
+# Also check it against checkpoints you kept independently (detects rollback / rewritten history)
+npx maindala verify-log ./export --trust trust.json --retained checkpoints.ndjson --json
+```
+
+Verifies a signed, append-only evidence log export offline: RFC 6962 Merkle tree,
+C2SP signed-note checkpoints, Ed25519 signatures. Each segment reports a structural
+outcome (`consistent`, `rolled_back`, `conflicting_history`, `broken`, with the first
+failing index) and, separately, provenance (`authenticated`, `not_authenticated`,
+`revoked`) judged only against the trust file. "Verified" means consistent **and**
+authenticated. Exit codes: `0` verified, `1` consistent but not authenticated or not
+fully related, `2` failed. It uses Node's built-in crypto only and makes no network
+call. The export layout, `trust.json` format and the revocation-time limitation are in
+[docs/verify-log-format.md](./docs/verify-log-format.md).
+
 ## Releasing
 
 See [RELEASING.md](./RELEASING.md) — publishing runs through a GitHub Release +

@@ -339,6 +339,26 @@ program
   });
 
 program
+  .command('verify-log <exportDir>')
+  .description(
+    'Verify a signed, append-only evidence log export offline (RFC 6962 Merkle\n' +
+    '  tree, C2SP signed-note checkpoints, Ed25519). Reports per segment whether the\n' +
+    '  history is consistent, and separately whether its signing key is authenticated\n' +
+    '  by a trust file you supply (--trust). "verified" means both. Exit codes: 0\n' +
+    '  verified; 1 consistent but not authenticated or not fully related; 2 failed.\n' +
+    '  Makes no network call. See docs/verify-log-format.md.'
+  )
+  .option('--trust <file>', 'trust.json: the installation id and pinned key fingerprints, obtained from outside the export')
+  .option('--retained <file>', 'NDJSON of independently retained checkpoints (detects rollback and rewritten history)')
+  .option('--json', 'print the full report as JSON')
+  .action(async (exportDir: string, opts: { trust?: string; retained?: string; json?: boolean }) => {
+    const { runVerifyLog } = await import('./verify-log-cli.js');
+    const result = runVerifyLog(exportDir, opts);
+    for (const line of result.lines) console.log(line);
+    process.exit(result.exitCode);
+  });
+
+program
   .command('scan [path]')
   .description(
     'Discover AI agents and MCP integrations in a local codebase — no account\n' +
