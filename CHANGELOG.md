@@ -6,6 +6,17 @@ against what is actually live on npm (`npm view maindala versions`/`npm view mai
 checked 2026-08-11), not just what shipped in source. This is the first release with a
 CHANGELOG.md — everything through 0.1.11 is a historical backfill.
 
+## [Unreleased]
+
+### Added
+- `maindala verify-log <exportDir> [--trust trust.json] [--retained checkpoints.ndjson] [--json]`
+  verifies a signed, append-only evidence log export offline (RFC 6962 Merkle tree, C2SP
+  signed-note checkpoints, Ed25519). Reports per segment whether the history is consistent,
+  rolled back, conflicting or broken, and separately whether its signing key is authenticated
+  by the trust file; "verified" needs both. Exit codes 0 verified, 1 consistent but not
+  authenticated or not fully related, 2 failed. No network access. Format and the
+  revocation-time limitation: `docs/verify-log-format.md`.
+
 ## [0.4.0] - 2026-08-25
 
 ### Added
