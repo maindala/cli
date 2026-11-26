@@ -5,8 +5,7 @@
 // mAIndala org registry (--register), and/or emits a SARIF 2.1.0 report plus a
 // signable digest manifest the caller can hand to their own signing
 // infrastructure (cosign, GPG, an in-house TSA) before anything touches
-// mAIndala. See the design doc this implements:
-// aidlc-docs/design-artifacts/shadow-ai-discovery-p1.md (private monorepo) Sec 5-6, 10.
+// mAIndala.
 
 import fs from 'fs';
 import path from 'path';

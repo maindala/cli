@@ -1,7 +1,6 @@
-// RFC 3161 timestamp client for `maindala scan --timestamp` — ported from the
-// catalog-service evidence-pack TSA client (same technique, same library set,
-// which is why @peculiar/asn1-* and pkijs are already dependencies of this
-// CLI, used today only for verify-pack.ts's token *verification*). Submits
+// RFC 3161 timestamp client for `maindala scan --timestamp`. It uses the same
+// library set as verify-pack.ts's token *verification* (@peculiar/asn1-* and
+// pkijs, already dependencies of this CLI). Submits
 // the scan manifest's own digest to a public Time-Stamp Authority so the
 // customer's local record carries a third-party-anchored timestamp without
 // mAIndala retaining anything. Never throws — a failed or unreachable TSA
