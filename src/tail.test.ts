@@ -123,9 +123,8 @@ describe('newestAlertRow — cursor advancement', () => {
 });
 
 // ─── Telemetry Signup Consented Lead Capture ─────────────────────────────────────
-// See aidlc-docs/design-artifacts/telemetry-signup-consent-2026-08.md in the
-// maindala/maindala monorepo. Server-side behavior (dedup, opt_in_at, lead creation)
-// is already covered by real Postgres integration tests there — these tests cover
+// Server-side behavior (dedup, opt_in_at, lead creation)
+// is covered by the server's own integration tests — these tests cover
 // only what the CLI is responsible for: sending the right request shape, and never
 // prompting (or defaulting to consent) outside a real interactive terminal.
 

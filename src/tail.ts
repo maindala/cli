@@ -374,8 +374,7 @@ async function fetchFreeStream(token: string, sinceMs: number | null): Promise<F
 // family's issuance convention) so the caller can save it via saveApiKey.
 // Telemetry Signup Consented Lead Capture: company/contactOptIn are both optional on
 // the server (backward compatible), so this signature is too — a caller that omits
-// `consent` entirely gets the exact pre-existing behavior. See the maindala/maindala
-// design doc aidlc-docs/design-artifacts/telemetry-signup-consent-2026-08.md §6-7.
+// `consent` entirely gets the exact pre-existing behavior.
 export async function signupForTelemetryToken(
   email: string,
   consent?: { company?: string; contactOptIn?: boolean },
