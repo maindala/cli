@@ -18,7 +18,8 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "bin"
+    "bin",
+    "docs/verify-log-format.md"
   ],
   "scripts": {
     "build": "tsc",
